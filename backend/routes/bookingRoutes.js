@@ -17,6 +17,12 @@ router.get('/', userAuth, bookingController.getBookings);
 // Update booking time (resets to pending)
 router.put('/:id/update-time', userAuth, bookingController.updateBookingTime);
 
+// User responds to time change request
+router.put('/:id/respond-time-change', userAuth, bookingController.respondToTimeChange);
+
+// Get bookings with pending time change requests
+router.get('/pending-time-changes', userAuth, bookingController.getPendingTimeChangeRequests);
+
 // ---------- ADMIN ROUTES ----------
 router.put('/:id/status', adminAuth, bookingController.updateBookingStatus);
 
@@ -24,5 +30,8 @@ router.put('/:id/status', adminAuth, bookingController.updateBookingStatus);
 router.get('/all', adminAuth, bookingController.getAllBookings);
 
 router.get('/analytics', adminAuth, bookingController.getBookingAnalytics);
+
+// Admin requests time change
+router.put('/:id/request-time-change', adminAuth, bookingController.requestTimeChange);
 
 module.exports = router;

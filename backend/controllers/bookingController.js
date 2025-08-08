@@ -326,3 +326,168 @@ exports.getBookingAnalytics = async (req, res) => {
     });
   }
 };
+
+
+// Admin requests time change with suggested slots
+exports.requestTimeChange = async (req, res) => {
+    try {
+      if (req.user.role !== ROLES.ADMIN) {
+        return res.status(403).json({
+          statusCode: 403,
+          success: false,
+          error: { message: 'Only admins can request time changes' },
+          data: null
+        });
+      }
+  
+      const { reason, suggestedSlots } = req.body;
+      
+      if (!suggestedSlots || !Array.isArray(suggestedSlots) || suggestedSlots.length === 0) {
+        return res.status(400).json({
+          statusCode: 400,
+          success: false,
+          error: { message: 'Please provide at least one suggested time slot' },
+          data: null
+        });
+      }
+  
+      const booking = await Booking.findById(req.params.id);
+      if (!booking) {
+        return res.status(404).json({
+          statusCode: 404,
+          success: false,
+          error: { message: 'Booking not found' },
+          data: null
+        });
+      }
+  
+      booking.timeChangeRequest = {
+        requested: true,
+        reason,
+        suggestedSlots,
+        requestedAt: new Date()
+      };
+  
+      await booking.save();
+  
+      // Here you would typically send a notification to the user
+      // via email or push notification
+  
+      return res.status(200).json({
+        statusCode: 200,
+        success: true,
+        error: null,
+        data: booking
+      });
+    } catch (err) {
+      console.error('Request time change error:', err);
+      return res.status(500).json({
+        statusCode: 500,
+        success: false,
+        error: { message: 'Server error' },
+        data: null
+      });
+    }
+  };
+  
+  // User responds to time change request
+  exports.respondToTimeChange = async (req, res) => {
+    try {
+      const { accept, newTimeSlot } = req.body;
+      const booking = await Booking.findById(req.params.id);
+  
+      if (!booking) {
+        return res.status(404).json({
+          statusCode: 404,
+          success: false,
+          error: { message: 'Booking not found' },
+          data: null
+        });
+      }
+  
+      if (booking.user.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          statusCode: 403,
+          success: false,
+          error: { message: 'Not authorized to update this booking' },
+          data: null
+        });
+      }
+  
+      if (!booking.timeChangeRequest.requested) {
+        return res.status(400).json({
+          statusCode: 400,
+          success: false,
+          error: { message: 'No time change request pending for this booking' },
+          data: null
+        });
+      }
+  
+      if (accept) {
+        if (!newTimeSlot || !booking.timeChangeRequest.suggestedSlots.includes(newTimeSlot)) {
+          return res.status(400).json({
+            statusCode: 400,
+            success: false,
+            error: { 
+              message: 'Please select one of the suggested time slots',
+              suggestedSlots: booking.timeChangeRequest.suggestedSlots
+            },
+            data: null
+          });
+        }
+  
+        booking.timeSlot = newTimeSlot;
+        booking.status = BOOKING_STATUS.APPROVED; // Or keep as is if already approved
+      }
+  
+      // Reset the time change request regardless of acceptance
+      booking.timeChangeRequest = {
+        requested: false,
+        reason: null,
+        suggestedSlots: [],
+        requestedAt: null
+      };
+  
+      await booking.save();
+  
+      return res.status(200).json({
+        statusCode: 200,
+        success: true,
+        error: null,
+        data: booking
+      });
+    } catch (err) {
+      console.error('Respond to time change error:', err);
+      return res.status(500).json({
+        statusCode: 500,
+        success: false,
+        error: { message: 'Server error' },
+        data: null
+      });
+    }
+  };
+  
+  // Get bookings with pending time change requests (for user)
+  exports.getPendingTimeChangeRequests = async (req, res) => {
+    try {
+      const bookings = await Booking.find({
+        user: req.user._id,
+        'timeChangeRequest.requested': true
+      }).populate('property', 'title location');
+  
+      return res.status(200).json({
+        statusCode: 200,
+        success: true,
+        error: null,
+        data: bookings
+      });
+    } catch (err) {
+      console.error('Get pending time change requests error:', err);
+      return res.status(500).json({
+        statusCode: 500,
+        success: false,
+        error: { message: 'Server error' },
+        data: null
+      });
+    }
+  };
