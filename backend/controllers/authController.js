@@ -384,10 +384,136 @@ const sendOTP = async (req, res) => {
   }
 };
 
+// Step 1: Request password reset OTP
+const forgotPasswordRequest = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        statusCode: 404,
+        success: false,
+        error: { message: 'User not found' },
+        data: null
+      });
+    }
+
+    const otp = await generateAndSaveOTP(email);
+    await sendOTPEmail(email, otp);
+
+    res.status(200).json({
+      statusCode: 200,
+      success: true,
+      error: null,
+      data: { message: 'Password reset OTP sent successfully' }
+    });
+  } catch (error) {
+    console.error('Forgot password request error:', error);
+    res.status(500).json({
+      statusCode: 500,
+      success: false,
+      error: { message: 'Internal server error', details: error.message },
+      data: null
+    });
+  }
+};
+
+// Step 2: Verify OTP for password reset
+const verifyForgotPasswordOTP = async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        statusCode: 404,
+        success: false,
+        error: { message: 'User not found' },
+        data: null
+      });
+    }
+
+    const isValidOTP = await verifyOTP(email, otp);
+    if (!isValidOTP) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: { message: 'Invalid or expired OTP' },
+        data: null
+      });
+    }
+
+    res.status(200).json({
+      statusCode: 200,
+      success: true,
+      error: null,
+      data: { message: 'OTP verified successfully' }
+    });
+  } catch (error) {
+    console.error('Verify forgot password OTP error:', error);
+    res.status(500).json({
+      statusCode: 500,
+      success: false,
+      error: { message: 'Internal server error', details: error.message },
+      data: null
+    });
+  }
+};
+
+// Step 3: Reset password using OTP
+const resetPassword = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        statusCode: 404,
+        success: false,
+        error: { message: 'User not found' },
+        data: null
+      });
+    }
+
+    const isValidOTP = await verifyOTP(email, otp);
+    if (!isValidOTP) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: { message: 'Invalid or expired OTP' },
+        data: null
+      });
+    }
+
+    user.password = newPassword; // will be hashed by pre-save hook
+    await user.save();
+
+    res.status(200).json({
+      statusCode: 200,
+      success: true,
+      error: null,
+      data: { message: 'Password reset successfully' }
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      statusCode: 500,
+      success: false,
+      error: { message: 'Internal server error', details: error.message },
+      data: null
+    });
+  }
+};
+
+
 module.exports = {
   register,
   validateOTP,
   loginWithPassword,
   loginWithOTP,
-  sendOTP
+  sendOTP,
+  forgotPasswordRequest,
+  verifyForgotPasswordOTP,
+  resetPassword
 };
