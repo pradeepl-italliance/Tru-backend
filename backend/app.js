@@ -7,6 +7,7 @@ const userRoutes = require('./routes/userRoutes');
 const ownerRoutes = require('./routes/ownerRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const bookingRoutes = require('./routes/bookingRoutes')
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/booking', bookingRoutes)
 
 // Enhanced Error handling middleware
 app.use((err, req, res, next) => {

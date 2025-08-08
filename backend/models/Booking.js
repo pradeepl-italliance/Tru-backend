@@ -1,15 +1,16 @@
 const mongoose = require('mongoose');
+const { BOOKING_STATUS } = require('../utils/constants');
 const Schema = mongoose.Schema;
 
 const bookingSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   property: { type: Schema.Types.ObjectId, ref: 'Property', required: true },
   date: { type: Date, required: true },
-  time: { type: String, required: true },
-  status: { 
-    type: String, 
-    enum: ['pending', 'approved', 'rejected', 'completed'], 
-    default: 'pending' 
+  timeSlot: { type: String, required: true }, // renamed for clarity
+  status: {
+    type: String,
+    enum: Object.values(BOOKING_STATUS),
+    default: BOOKING_STATUS.PENDING
   },
   createdAt: { type: Date, default: Date.now }
 });
