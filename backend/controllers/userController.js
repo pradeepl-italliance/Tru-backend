@@ -86,7 +86,8 @@ const getPropertyById = async (req, res) => {
     const bookedSlots = bookings.map(b => ({
       date: b.date,
       timeSlot: b.timeSlot,
-      bookedByCurrentUser: b.user.toString() === userId?.toString()
+      bookedByCurrentUser: b.user.toString() === userId?.toString(),
+      status: b.status
     }));
 
     res.status(200).json({
