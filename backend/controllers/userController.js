@@ -84,6 +84,7 @@ const getPropertyById = async (req, res) => {
 
     // List all booked slots (time + date)
     const bookedSlots = bookings.map(b => ({
+      id: b._id,
       date: b.date,
       timeSlot: b.timeSlot,
       bookedByCurrentUser: b.user.toString() === userId?.toString(),
