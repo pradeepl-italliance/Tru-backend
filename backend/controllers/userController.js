@@ -57,11 +57,11 @@ const getAllProperties = async (req, res) => {
 
 const getPropertyById = async (req, res) => {
   const { id } = req.params;
-  const userId = req.user?._id; // assuming req.user is populated by authentication middleware
+  const userId = req.user?._id ? req.user._id.toString() : null;
 
   try {
-    // Fetch property
-    const property = await Property.findById(id);
+    // fetch property (use .lean() for plain object)
+    const property = await Property.findById(id).lean();
     if (!property) {
       return res.status(404).json({
         statusCode: 404,
@@ -71,24 +71,17 @@ const getPropertyById = async (req, res) => {
       });
     }
 
-    // Fetch bookings for this property
-    const bookings = await Booking.find({
-      property: id,
-      status: { $in: [BOOKING_STATUS.PENDING, BOOKING_STATUS.CONFIRMED] }
-    });
+    // FETCH BOOKINGS WITHOUT FILTERING BY STATUS so we return the exact DB status
+    const bookings = await Booking.find({ property: id })
+      .select('_id user date timeSlot status')
+      .lean();
 
-    // Check if current user has booked it
-    const userHasBooking = bookings.some(
-      booking => booking.user.toString() === userId?.toString()
-    );
-
-    // List all booked slots (time + date)
     const bookedSlots = bookings.map(b => ({
       id: b._id,
       date: b.date,
       timeSlot: b.timeSlot,
-      bookedByCurrentUser: b.user.toString() === userId?.toString(),
-      status: b.status
+      status: b.status, // exactly what is in the Booking document
+      bookedByCurrentUser: !!(b.user && b.user.toString() === userId),
     }));
 
     res.status(200).json({
@@ -97,26 +90,10 @@ const getPropertyById = async (req, res) => {
       error: null,
       data: {
         message: 'Property retrieved successfully',
-        property: {
-          id: property._id,
-          title: property.title,
-          description: property.description,
-          location: property.location,
-          rent: property.rent,
-          deposit: property.deposit,
-          propertyType: property.propertyType,
-          bedrooms: property.bedrooms,
-          bathrooms: property.bathrooms,
-          area: property.area,
-          amenities: property.amenities,
-          images: property.images,
-          status: property.status,
-          createdAt: property.createdAt,
-          updatedAt: property.updatedAt
-        },
+        property,
         bookingInfo: {
-          userHasBooking,
-          bookedSlots
+          userHasBooking: bookedSlots.some(s => s.bookedByCurrentUser),
+          bookedSlots,
         }
       }
     });
@@ -134,6 +111,7 @@ const getPropertyById = async (req, res) => {
     });
   }
 };
+
 
 // Add property to wishlist
 const addToWishlist = async (req, res) => {
