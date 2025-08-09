@@ -57,9 +57,37 @@ const getAllProperties = async (req, res) => {
 
 const getPropertyById = async (req, res) => {
   const { id } = req.params;
+  const userId = req.user?._id; // assuming req.user is populated by authentication middleware
 
   try {
-    const property = await Property.findById(id)
+    // Fetch property
+    const property = await Property.findById(id);
+    if (!property) {
+      return res.status(404).json({
+        statusCode: 404,
+        success: false,
+        error: { message: 'Property not found' },
+        data: null
+      });
+    }
+
+    // Fetch bookings for this property
+    const bookings = await Booking.find({
+      property: id,
+      status: { $in: [BOOKING_STATUS.PENDING, BOOKING_STATUS.CONFIRMED] }
+    });
+
+    // Check if current user has booked it
+    const userHasBooking = bookings.some(
+      booking => booking.user.toString() === userId?.toString()
+    );
+
+    // List all booked slots (time + date)
+    const bookedSlots = bookings.map(b => ({
+      date: b.date,
+      timeSlot: b.timeSlot,
+      bookedByCurrentUser: b.user.toString() === userId?.toString()
+    }));
 
     res.status(200).json({
       statusCode: 200,
@@ -83,9 +111,14 @@ const getPropertyById = async (req, res) => {
           status: property.status,
           createdAt: property.createdAt,
           updatedAt: property.updatedAt
+        },
+        bookingInfo: {
+          userHasBooking,
+          bookedSlots
         }
       }
     });
+
   } catch (error) {
     console.error('Get property by ID error:', error);
     res.status(500).json({
@@ -97,7 +130,7 @@ const getPropertyById = async (req, res) => {
       },
       data: null
     });
-  } 
+  }
 };
 
 // Add property to wishlist
