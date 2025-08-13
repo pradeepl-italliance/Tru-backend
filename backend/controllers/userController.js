@@ -34,20 +34,135 @@ const getAllProperties = async (req, res) => {
       });
     }
 
+    // Build filter query
+    const filterQuery = { status: PROPERTY_STATUS.PUBLISHED };
+
+    // Rent filters (range)
+    if (req.query.minRent || req.query.maxRent) {
+      filterQuery.rent = {};
+      if (req.query.minRent) {
+        filterQuery.rent.$gte = parseInt(req.query.minRent);
+      }
+      if (req.query.maxRent) {
+        filterQuery.rent.$lte = parseInt(req.query.maxRent);
+      }
+    }
+
+    // Deposit filters (range)
+    if (req.query.minDeposit || req.query.maxDeposit) {
+      filterQuery.deposit = {};
+      if (req.query.minDeposit) {
+        filterQuery.deposit.$gte = parseInt(req.query.minDeposit);
+      }
+      if (req.query.maxDeposit) {
+        filterQuery.deposit.$lte = parseInt(req.query.maxDeposit);
+      }
+    }
+
+    // Property type filter
+    if (req.query.propertyType) {
+      filterQuery.propertyType = req.query.propertyType;
+    }
+
+    // Bedrooms filter
+    if (req.query.bedrooms) {
+      filterQuery.bedrooms = parseInt(req.query.bedrooms);
+    }
+
+    // Bathrooms filter
+    if (req.query.bathrooms) {
+      filterQuery.bathrooms = parseInt(req.query.bathrooms);
+    }
+
+    // Area filter (range)
+    if (req.query.minArea || req.query.maxArea) {
+      filterQuery.area = {};
+      if (req.query.minArea) {
+        filterQuery.area.$gte = parseInt(req.query.minArea);
+      }
+      if (req.query.maxArea) {
+        filterQuery.area.$lte = parseInt(req.query.maxArea);
+      }
+    }
+
+    // Amenities filter (contains any of the specified amenities)
+    if (req.query.amenities) {
+      const amenitiesArray = Array.isArray(req.query.amenities) 
+        ? req.query.amenities 
+        : req.query.amenities.split(',').map(a => a.trim());
+      filterQuery.amenities = { $in: amenitiesArray };
+    }
+
+    // Location filters
+    if (req.query.address) {
+      filterQuery['location.address'] = { 
+        $regex: req.query.address, 
+        $options: 'i' 
+      };
+    }
+
+    if (req.query.city) {
+      filterQuery['location.city'] = { 
+        $regex: req.query.city, 
+        $options: 'i' 
+      };
+    }
+
+    if (req.query.state) {
+      filterQuery['location.state'] = { 
+        $regex: req.query.state, 
+        $options: 'i' 
+      };
+    }
+
+    // Text search filter (searches in title and description)
+    if (req.query.search) {
+      const searchRegex = { $regex: req.query.search, $options: 'i' };
+      filterQuery.$or = [
+        { title: searchRegex },
+        { description: searchRegex }
+      ];
+    }
+
+    // Sorting options
+    let sortQuery = { createdAt: -1 }; // Default sort by newest
+    if (req.query.sortBy) {
+      switch (req.query.sortBy) {
+        case 'rent_asc':
+          sortQuery = { rent: 1 };
+          break;
+        case 'rent_desc':
+          sortQuery = { rent: -1 };
+          break;
+        case 'area_asc':
+          sortQuery = { area: 1 };
+          break;
+        case 'area_desc':
+          sortQuery = { area: -1 };
+          break;
+        case 'newest':
+          sortQuery = { createdAt: -1 };
+          break;
+        case 'oldest':
+          sortQuery = { createdAt: 1 };
+          break;
+        default:
+          sortQuery = { createdAt: -1 };
+      }
+    }
+
     // Get total count for pagination metadata
-    const totalProperties = await Property.countDocuments({ 
-      status: PROPERTY_STATUS.PUBLISHED 
-    });
+    const totalProperties = await Property.countDocuments(filterQuery);
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalProperties / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    // Fetch properties with pagination
-    const properties = await Property.find({ status: PROPERTY_STATUS.PUBLISHED })
+    // Fetch properties with filters, pagination, and sorting
+    const properties = await Property.find(filterQuery)
       .populate('owner')
-      .sort({ createdAt: -1 })
+      .sort(sortQuery)
       .skip(skip)
       .limit(limit);
 
@@ -89,6 +204,23 @@ const getAllProperties = async (req, res) => {
           hasPrevPage: hasPrevPage,
           nextPage: hasNextPage ? page + 1 : null,
           prevPage: hasPrevPage ? page - 1 : null
+        },
+        appliedFilters: {
+          minRent: req.query.minRent || null,
+          maxRent: req.query.maxRent || null,
+          minDeposit: req.query.minDeposit || null,
+          maxDeposit: req.query.maxDeposit || null,
+          propertyType: req.query.propertyType || null,
+          bedrooms: req.query.bedrooms || null,
+          bathrooms: req.query.bathrooms || null,
+          minArea: req.query.minArea || null,
+          maxArea: req.query.maxArea || null,
+          amenities: req.query.amenities || null,
+          address: req.query.address || null,
+          city: req.query.city || null,
+          state: req.query.state || null,
+          search: req.query.search || null,
+          sortBy: req.query.sortBy || 'newest'
         }
       }
     });
