@@ -6,9 +6,50 @@ const { PROPERTY_STATUS, BOOKING_STATUS } = require('../utils/constants');
 // Get all published properties
 const getAllProperties = async (req, res) => {
   try {
+    // Extract pagination parameters from query string
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Validate pagination parameters
+    if (page < 1) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: {
+          message: 'Page number must be greater than 0'
+        },
+        data: null
+      });
+    }
+
+    if (limit < 1 || limit > 100) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: {
+          message: 'Limit must be between 1 and 100'
+        },
+        data: null
+      });
+    }
+
+    // Get total count for pagination metadata
+    const totalProperties = await Property.countDocuments({ 
+      status: PROPERTY_STATUS.PUBLISHED 
+    });
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalProperties / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    // Fetch properties with pagination
     const properties = await Property.find({ status: PROPERTY_STATUS.PUBLISHED })
       .populate('owner')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       statusCode: 200,
@@ -38,7 +79,17 @@ const getAllProperties = async (req, res) => {
           createdAt: property.createdAt,
           updatedAt: property.updatedAt
         })),
-        totalProperties: properties.length
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalProperties: totalProperties,
+          propertiesPerPage: limit,
+          propertiesOnCurrentPage: properties.length,
+          hasNextPage: hasNextPage,
+          hasPrevPage: hasPrevPage,
+          nextPage: hasNextPage ? page + 1 : null,
+          prevPage: hasPrevPage ? page - 1 : null
+        }
       }
     });
   } catch (error) {
