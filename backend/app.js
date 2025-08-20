@@ -7,7 +7,8 @@ const userRoutes = require('./routes/userRoutes');
 const ownerRoutes = require('./routes/ownerRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-const bookingRoutes = require('./routes/bookingRoutes')
+const bookingRoutes = require('./routes/bookingRoutes');
+const commonRoutes = require('./routes/commonRoutes');
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use((req, res, next) => {
 });
 
 // Routes
+app.use('/api', commonRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/owner', ownerRoutes);
