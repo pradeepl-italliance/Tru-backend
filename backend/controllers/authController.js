@@ -14,49 +14,31 @@ const generateToken = async (user) => {
 
 // Register user
 const register = async (req, res) => {
-  const { name, email, password, role, idProofNumber, idProofType, idProofImageUrl } = req.body;
+  const { firstName, lastName, name, email, password, phone, role, idProofNumber, idProofType, idProofImageUrl } = req.body;
 
   try {
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        statusCode: 400,
-        success: false,
-        error: {
-          message: 'Invalid email format'
-        },
-        data: null
-      });
+      return res.status(400).json({ success: false, error: { message: 'Invalid email format' }, data: null });
     }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({
-        statusCode: 400,
-        success: false,
-        error: {
-          message: 'Email already in use'
-        },
-        data: null
-      });
+      return res.status(400).json({ success: false, error: { message: 'Email already in use' }, data: null });
     }
 
     // Validate ID proof for owner
     if (role === ROLES.OWNER) {
       if (!idProofNumber || !idProofType || !idProofImageUrl) {
-        return res.status(400).json({
-          statusCode: 400,
-          success: false,
-          error: {
-            message: 'Owner registration requires ID proof details'
-          },
-          data: null
-        });
+        return res.status(400).json({ success: false, error: { message: 'Owner registration requires ID proof details' }, data: null });
       }
     }
 
     const user = new User({
-      name,
+      firstName,
+      lastName,
+      name: name || `${firstName || ''} ${lastName || ''}`.trim(),
       email,
+      phone,
       password,
       role: role || ROLES.USER,
       verified: false
@@ -82,7 +64,6 @@ const register = async (req, res) => {
     await sendOTPEmail(email, otp);
 
     res.status(201).json({
-      statusCode: 201,
       success: true,
       error: null,
       data: {
@@ -90,6 +71,10 @@ const register = async (req, res) => {
         user: {
           id: user._id,
           email: user.email,
+          phone: user.phone,
+          name: user.name,
+          firstName: user.firstName,
+          lastName: user.lastName,
           role: user.role,
           isVerified: user.verified
         }
@@ -97,13 +82,64 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
+    res.status(500).json({ success: false, error: { message: 'Internal server error', details: error.message }, data: null });
+  }
+};
+
+// Update User
+const updateUser = async (req, res) => {
+  const userId = req.user._id; // from auth middleware
+  const { id, firstName, lastName, name, phone, password } = req.body;
+
+  try {
+    // ✅ Check if the request is trying to update the same logged-in user
+    if (id && id !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'You are not authorized to update this user' },
+        data: null
+      });
+    }
+
+    const updateData = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (name) updateData.name = name;
+    if (phone) updateData.phone = phone;
+    if (password) updateData.password = password; // will be hashed by pre-save hook
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'User not found' },
+        data: null
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      error: null,
+      data: {
+        message: 'User updated successfully',
+        user: {
+          id: updatedUser._id,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          name: updatedUser.name,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          role: updatedUser.role,
+          isVerified: updatedUser.verified
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
     res.status(500).json({
-      statusCode: 500,
       success: false,
-      error: {
-        message: 'Internal server error',
-        details: error.message
-      },
+      error: { message: 'Internal server error', details: error.message },
       data: null
     });
   }
@@ -506,6 +542,49 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// Delete User
+const deleteUser = async (req, res) => {
+  const requesterRole = req.user.role; // role comes from auth middleware
+  const { userId } = req.body; // admin specifies which user to delete
+
+  try {
+    // Check if the logged-in user is admin
+    if (requesterRole !== ROLES.ADMIN) {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'Access denied. Only admins can delete users.' },
+        data: null
+      });
+    }
+
+    // Delete target user
+    const deletedUser = await User.findByIdAndDelete(userId);
+
+    if (!deletedUser) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'User not found' },
+        data: null
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      error: null,
+      data: { message: 'User deleted successfully', deletedUserId: userId }
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      error: { message: 'Internal server error', details: error.message },
+      data: null
+    });
+  }
+};
+
+
+
 
 module.exports = {
   register,
@@ -515,5 +594,7 @@ module.exports = {
   sendOTP,
   forgotPasswordRequest,
   verifyForgotPasswordOTP,
-  resetPassword
+  resetPassword,
+  updateUser,
+  deleteUser
 };

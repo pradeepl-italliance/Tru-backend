@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middlewares/auth');
 const authController = require('../controllers/authController');
 
 // Register new user
@@ -25,5 +26,10 @@ router.post('/forgot-password/verify', authController.verifyForgotPasswordOTP);
 
 // Forgot Password - Reset Password
 router.post('/reset-password', authController.resetPassword);
+
+// User profile routes
+router.use(auth);
+router.put('/update',auth, authController.updateUser);
+router.delete('/delete',auth, authController.deleteUser);
 
 module.exports = router;

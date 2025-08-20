@@ -243,7 +243,7 @@ const getPropertyById = async (req, res) => {
   const userId = req.user?._id ? req.user._id.toString() : null;
 
   try {
-    // fetch property (use .lean() for plain object)
+    // fetch property
     const property = await Property.findById(id).lean();
     if (!property) {
       return res.status(404).json({
@@ -254,7 +254,7 @@ const getPropertyById = async (req, res) => {
       });
     }
 
-    // FETCH BOOKINGS WITHOUT FILTERING BY STATUS so we return the exact DB status
+    // fetch bookings
     const bookings = await Booking.find({ property: id })
       .select('_id user date timeSlot status')
       .lean();
@@ -263,9 +263,59 @@ const getPropertyById = async (req, res) => {
       id: b._id,
       date: b.date,
       timeSlot: b.timeSlot,
-      status: b.status, // exactly what is in the Booking document
+      status: b.status,
       bookedByCurrentUser: !!(b.user && b.user.toString() === userId),
     }));
+
+    // target count
+    const SIMILAR_LIMIT = 5;
+    let candidates = [];
+
+    // step 1: same city + rent range
+    const rentRange = {
+      $gte: property.rent * 0.8,
+      $lte: property.rent * 1.2
+    };
+
+    candidates = await Property.find({
+      _id: { $ne: property._id },
+      'location.city': property.location.city,
+      propertyType: property.propertyType,
+      rent: rentRange,
+      status: 'published'
+    }).lean();
+
+    // step 2: same city (ignore rent) if fewer than 5
+    if (candidates.length < SIMILAR_LIMIT) {
+      const extra = await Property.find({
+        _id: { $ne: property._id },
+        'location.city': property.location.city,
+        propertyType: property.propertyType,
+        status: 'published'
+      }).lean();
+
+      candidates = [...candidates, ...extra];
+    }
+
+    // step 3: any city (fallback) if still fewer than 5
+    if (candidates.length < SIMILAR_LIMIT) {
+      const extra = await Property.find({
+        _id: { $ne: property._id },
+        propertyType: property.propertyType,
+        status: 'published'
+      }).lean();
+
+      candidates = [...candidates, ...extra];
+    }
+
+    // sort by rent difference (closest first)
+    candidates = candidates.sort(
+      (a, b) =>
+        Math.abs(a.rent - property.rent) - Math.abs(b.rent - property.rent)
+    );
+
+    // take top 5
+    const similarProperties = candidates.slice(0, SIMILAR_LIMIT);
 
     res.status(200).json({
       statusCode: 200,
@@ -277,7 +327,8 @@ const getPropertyById = async (req, res) => {
         bookingInfo: {
           userHasBooking: bookedSlots.some(s => s.bookedByCurrentUser),
           bookedSlots,
-        }
+        },
+        similarProperties
       }
     });
 
@@ -294,6 +345,7 @@ const getPropertyById = async (req, res) => {
     });
   }
 };
+
 
 
 // Add property to wishlist
