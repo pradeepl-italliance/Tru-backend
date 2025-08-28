@@ -340,6 +340,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
             (p) => p.status === PROPERTY_STATUS.REJECTED
           ).length
         }
+        
       }
     });
   } catch (error) {
