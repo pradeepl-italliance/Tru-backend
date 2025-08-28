@@ -25,7 +25,7 @@ const propertySchema = new Schema({
   images: [String], // Array of image URLs
   status: { 
     type: String, 
-    enum: ['pending', 'approved', 'rejected', 'published'], 
+    enum: ['pending', 'approved', 'rejected', 'published', 'sold'], 
     default: 'pending' 
   },
   createdAt: { type: Date, default: Date.now },
