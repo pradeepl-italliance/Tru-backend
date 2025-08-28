@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Property = require('../models/Property');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
@@ -250,7 +251,44 @@ const getAllUsers = async (req, res) => {
 // Get all properties for admin
 const getAllPropertiesForAdmin = async (req, res) => {
   try {
-    const properties = await Property.find({}).populate('owner');
+    const { propertyId, customerEmail, customerPhone } = req.query;
+
+    // Build filters dynamically
+    let filters = {};
+    if (propertyId && mongoose.Types.ObjectId.isValid(propertyId)) {
+      filters._id = propertyId;
+    }
+
+    // Prepare owner filter if searching by user email/phone
+    let ownerFilter = {};
+    if (customerEmail) {
+      ownerFilter['user.email'] = customerEmail;
+    }
+    if (customerPhone) {
+      ownerFilter['user.phone'] = customerPhone;
+    }
+
+    // Fetch properties with deep population
+    let properties = await Property.find(filters)
+      .populate({
+        path: 'owner',
+        populate: {
+          path: 'user',
+          model: 'User',
+          select: 'firstName lastName name email phone verified role'
+        }
+      });
+
+    // If filtering by email/phone, filter results in memory
+    if (customerEmail || customerPhone) {
+      properties = properties.filter(
+        (p) =>
+          p.owner &&
+          p.owner.user &&
+          ((customerEmail && p.owner.user.email === customerEmail) ||
+            (customerPhone && p.owner.user.phone === customerPhone))
+      );
+    }
 
     res.status(200).json({
       statusCode: 200,
@@ -258,7 +296,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
       error: null,
       data: {
         message: 'Properties retrieved successfully',
-        properties: properties.map(property => ({
+        properties: properties.map((property) => ({
           id: property._id,
           title: property.title,
           description: property.description,
@@ -272,16 +310,35 @@ const getAllPropertiesForAdmin = async (req, res) => {
           amenities: property.amenities,
           images: property.images,
           status: property.status,
-          owner: property.owner,
           createdAt: property.createdAt,
-          updatedAt: property.updatedAt
+          updatedAt: property.updatedAt,
+          owner: property.owner && property.owner.user
+            ? {
+                id: property.owner.user._id,
+                firstName: property.owner.user.firstName,
+                lastName: property.owner.user.lastName,
+                name: property.owner.user.name,
+                email: property.owner.user.email,
+                phone: property.owner.user.phone,
+                verified: property.owner.user.verified,
+                role: property.owner.user.role
+              }
+            : null
         })),
         totalProperties: properties.length,
         statusBreakdown: {
-          pending: properties.filter(p => p.status === PROPERTY_STATUS.PENDING).length,
-          approved: properties.filter(p => p.status === PROPERTY_STATUS.APPROVED).length,
-          published: properties.filter(p => p.status === PROPERTY_STATUS.PUBLISHED).length,
-          rejected: properties.filter(p => p.status === PROPERTY_STATUS.REJECTED).length
+          pending: properties.filter(
+            (p) => p.status === PROPERTY_STATUS.PENDING
+          ).length,
+          approved: properties.filter(
+            (p) => p.status === PROPERTY_STATUS.APPROVED
+          ).length,
+          published: properties.filter(
+            (p) => p.status === PROPERTY_STATUS.PUBLISHED
+          ).length,
+          rejected: properties.filter(
+            (p) => p.status === PROPERTY_STATUS.REJECTED
+          ).length
         }
       }
     });
