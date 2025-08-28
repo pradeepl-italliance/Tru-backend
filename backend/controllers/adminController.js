@@ -77,32 +77,64 @@ const reviewProperty = async (req, res) => {
 };
 
 // Publish property
-const publishProperty = async (req, res) => {
+const updatePropertyStatus = async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id).populate('owner');
+    const { status } = req.body;
+
+    // Allow only valid statuses
+    if (!status || ![PROPERTY_STATUS.PUBLISHED, PROPERTY_STATUS.SOLD, PROPERTY_STATUS.REJECTED].includes(status)) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: { message: 'Invalid status update' },
+        data: null
+      });
+    }
+
+    const property = await Property.findById(req.params.id)
     if (!property) {
       return res.status(404).json({
         statusCode: 404,
         success: false,
-        error: {
-          message: 'Property not found'
-        },
+        error: { message: 'Property not found' },
         data: null
       });
     }
 
-    if (property.status !== PROPERTY_STATUS.APPROVED) {
+    // Prevent redundant updates
+    if (property.status === status) {
+      return res.status(200).json({
+        statusCode: 200,
+        success: true,
+        error: null,
+        data: {
+          message: `Property is already marked as ${status.toLowerCase()}`,
+          property
+        }
+      });
+    }
+
+    // Status transition rules
+    if (status === PROPERTY_STATUS.PUBLISHED && property.status !== PROPERTY_STATUS.APPROVED) {
       return res.status(400).json({
         statusCode: 400,
         success: false,
-        error: {
-          message: 'Property must be approved first before publishing'
-        },
+        error: { message: 'Only approved properties can be published' },
         data: null
       });
     }
 
-    property.status = PROPERTY_STATUS.PUBLISHED;
+    if (status === PROPERTY_STATUS.SOLD && property.status !== PROPERTY_STATUS.PUBLISHED) {
+      return res.status(400).json({
+        statusCode: 400,
+        success: false,
+        error: { message: 'Only published properties can be marked as sold' },
+        data: null
+      });
+    }
+
+    // REJECTED is always allowed, no condition needed
+    property.status = status;
     await property.save();
 
     res.status(200).json({
@@ -110,36 +142,16 @@ const publishProperty = async (req, res) => {
       success: true,
       error: null,
       data: {
-        message: 'Property published successfully',
-        property: {
-          id: property._id,
-          title: property.title,
-          description: property.description,
-          location: property.location,
-          rent: property.rent,
-          deposit: property.deposit,
-          propertyType: property.propertyType,
-          bedrooms: property.bedrooms,
-          bathrooms: property.bathrooms,
-          area: property.area,
-          amenities: property.amenities,
-          images: property.images,
-          status: property.status,
-          owner: property.owner,
-          createdAt: property.createdAt,
-          updatedAt: property.updatedAt
-        }
+        message: `Property marked as ${status.toLowerCase()} successfully`,
+        property
       }
     });
   } catch (error) {
-    console.error('Publish property error:', error);
+    console.error('Update property status error:', error);
     res.status(500).json({
       statusCode: 500,
       success: false,
-      error: {
-        message: 'Internal server error',
-        details: error.message
-      },
+      error: { message: 'Internal server error', details: error.message },
       data: null
     });
   }
@@ -415,7 +427,7 @@ const getAllBookings = async (req, res) => {
 
 module.exports = {
   reviewProperty,
-  publishProperty,
+  updatePropertyStatus,
   manageSiteVisit,
   getAllUsers,
   getAllPropertiesForAdmin,
