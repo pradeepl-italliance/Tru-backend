@@ -264,6 +264,7 @@ const getAllUsers = async (req, res) => {
 const getAllPropertiesForAdmin = async (req, res) => {
   try {
     const { 
+      title,
       propertyId, 
       customerEmail, 
       customerName, 
@@ -301,6 +302,9 @@ const getAllPropertiesForAdmin = async (req, res) => {
     }
     if (propertyType) {
       propertyFilters.propertyType = new RegExp(propertyType, 'i');
+    }
+    if (title) {
+      propertyFilters.title = new RegExp(title, 'i'); 
     }
     if (minRent || maxRent) {
       propertyFilters.rent = {};
