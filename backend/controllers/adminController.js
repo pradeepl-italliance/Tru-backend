@@ -293,22 +293,15 @@ const getAllPropertiesForAdmin = async (req, res) => {
     // Build property filters
     let propertyFilters = {};
     
-    // Property ID filter (exact match)
     if (propertyId && mongoose.Types.ObjectId.isValid(propertyId)) {
       propertyFilters._id = propertyId;
     }
-
-    // Status filter
     if (status && Object.values(PROPERTY_STATUS).includes(status)) {
       propertyFilters.status = status;
     }
-
-    // Property type filter
     if (propertyType) {
       propertyFilters.propertyType = new RegExp(propertyType, 'i');
     }
-
-    // Rent range filter
     if (minRent || maxRent) {
       propertyFilters.rent = {};
       if (minRent && !isNaN(minRent)) {
@@ -318,13 +311,9 @@ const getAllPropertiesForAdmin = async (req, res) => {
         propertyFilters.rent.$lte = parseInt(maxRent);
       }
     }
-
-    // Bedrooms filter
     if (bedrooms && !isNaN(bedrooms)) {
       propertyFilters.bedrooms = parseInt(bedrooms);
     }
-
-    // Bathrooms filter
     if (bathrooms && !isNaN(bathrooms)) {
       propertyFilters.bathrooms = parseInt(bathrooms);
     }
@@ -332,40 +321,39 @@ const getAllPropertiesForAdmin = async (req, res) => {
     // Build user filters for aggregation
     let userMatchStage = {};
     if (customerEmail) {
-      userMatchStage.email = new RegExp(customerEmail, 'i'); // Case-insensitive partial match
+      userMatchStage.email = new RegExp(customerEmail, 'i');
     }
     if (customerPhone) {
-      userMatchStage.phone = new RegExp(customerPhone, 'i'); // Partial match
+      userMatchStage.phone = new RegExp(customerPhone, 'i');
     }
     if (customerName) {
       userMatchStage.$or = [
-        { firstName: new RegExp(customerName, 'i') },
-        { lastName: new RegExp(customerName, 'i') },
-        { name: new RegExp(customerName, 'i') },
-        { 
-          $expr: { 
-            $regexMatch: { 
-              input: { $concat: ['$firstName', ' ', '$lastName'] }, 
-              regex: customerName, 
-              options: 'i' 
-            } 
-          } 
+        { 'userData.firstName': new RegExp(customerName, 'i') },
+        { 'userData.lastName': new RegExp(customerName, 'i') },
+        { 'userData.name': new RegExp(customerName, 'i') },
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $concat: ['$userData.firstName', ' ', '$userData.lastName'] },
+              regex: customerName,
+              options: 'i'
+            }
+          }
         }
       ];
     }
 
-    // Use aggregation for better performance when filtering by user data
     const hasUserFilters = customerEmail || customerPhone || customerName;
     
     let properties, totalCount;
 
     if (hasUserFilters) {
-      // Use aggregation pipeline for complex user filtering
+      // Aggregation pipeline when filtering by user data
       const pipeline = [
         { $match: propertyFilters },
         {
           $lookup: {
-            from: 'owners', // Adjust collection name as needed
+            from: 'owners',
             localField: 'owner',
             foreignField: '_id',
             as: 'ownerData'
@@ -381,7 +369,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
           }
         },
         { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
-        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: { 'userData': userMatchStage } }] : []),
+        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: userMatchStage }] : []),
         { $sort: { [sortField]: sortDirection } },
         {
           $facet: {
@@ -398,7 +386,6 @@ const getAllPropertiesForAdmin = async (req, res) => {
       properties = result[0].data;
       totalCount = result[0].totalCount[0]?.count || 0;
 
-      // Populate the aggregated results properly
       properties = properties.map(prop => ({
         ...prop,
         owner: prop.ownerData ? {
@@ -407,7 +394,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
         } : null
       }));
     } else {
-      // Use regular find with population for better performance when no user filters
+      // Normal find when no user filters
       const countPromise = Property.countDocuments(propertyFilters);
       const propertiesPromise = Property.find(propertyFilters)
         .populate({
@@ -425,9 +412,9 @@ const getAllPropertiesForAdmin = async (req, res) => {
       [totalCount, properties] = await Promise.all([countPromise, propertiesPromise]);
     }
 
-    // Calculate status breakdown efficiently
+    // Status breakdown
     const statusBreakdownPipeline = [
-      { $match: hasUserFilters ? {} : propertyFilters }, // Apply same filters for consistency
+      { $match: hasUserFilters ? {} : propertyFilters },
       ...(hasUserFilters ? [
         {
           $lookup: {
@@ -447,7 +434,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
           }
         },
         { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
-        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: { 'userData': userMatchStage } }] : [])
+        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: userMatchStage }] : [])
       ] : []),
       {
         $group: {
@@ -468,7 +455,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
       [PROPERTY_STATUS.REJECTED]: 0
     });
 
-    // Format response data
+    // Format response
     const formattedProperties = properties.map((property) => ({
       id: property._id,
       title: property.title,
@@ -499,7 +486,6 @@ const getAllPropertiesForAdmin = async (req, res) => {
         : null
     }));
 
-    // Calculate pagination info
     const totalPages = Math.ceil(totalCount / limitNum);
     const hasNextPage = pageNum < totalPages;
     const hasPrevPage = pageNum > 1;
@@ -550,6 +536,7 @@ const getAllPropertiesForAdmin = async (req, res) => {
     });
   }
 };
+
 
 // Get all bookings for admin
 const getAllBookings = async (req, res) => {

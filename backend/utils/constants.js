@@ -8,7 +8,8 @@ module.exports = {
       PENDING: 'pending',
       APPROVED: 'approved',
       REJECTED: 'rejected',
-      PUBLISHED: 'published'
+      PUBLISHED: 'published',
+      SOLD: 'sold'
     },
     BOOKING_STATUS: {
       PENDING: 'pending',
