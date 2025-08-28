@@ -10,7 +10,7 @@ router.use(adminAuth);
 
 // Property management
 router.patch('/properties/:id/review', adminController.reviewProperty);
-router.patch('/properties/:id', adminController.updatePropertyStatus);
+router.put('/properties/:id', adminController.updatePropertyStatus);
 
 // Booking management
 router.patch('/bookings/:id', adminController.manageSiteVisit);
