@@ -263,44 +263,246 @@ const getAllUsers = async (req, res) => {
 // Get all properties for admin
 const getAllPropertiesForAdmin = async (req, res) => {
   try {
-    const { propertyId, customerEmail, customerPhone } = req.query;
+    const { 
+      propertyId, 
+      customerEmail, 
+      customerName, 
+      customerPhone,
+      status,
+      propertyType,
+      minRent,
+      maxRent,
+      bedrooms,
+      bathrooms,
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
 
-    // Build filters dynamically
-    let filters = {};
+    // Validate pagination parameters
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Cap at 100
+    const skip = (pageNum - 1) * limitNum;
+
+    // Validate sort parameters
+    const allowedSortFields = ['createdAt', 'updatedAt', 'rent', 'title'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+    // Build property filters
+    let propertyFilters = {};
+    
+    // Property ID filter (exact match)
     if (propertyId && mongoose.Types.ObjectId.isValid(propertyId)) {
-      filters._id = propertyId;
+      propertyFilters._id = propertyId;
     }
 
-    // Prepare owner filter if searching by user email/phone
-    let ownerFilter = {};
+    // Status filter
+    if (status && Object.values(PROPERTY_STATUS).includes(status)) {
+      propertyFilters.status = status;
+    }
+
+    // Property type filter
+    if (propertyType) {
+      propertyFilters.propertyType = new RegExp(propertyType, 'i');
+    }
+
+    // Rent range filter
+    if (minRent || maxRent) {
+      propertyFilters.rent = {};
+      if (minRent && !isNaN(minRent)) {
+        propertyFilters.rent.$gte = parseInt(minRent);
+      }
+      if (maxRent && !isNaN(maxRent)) {
+        propertyFilters.rent.$lte = parseInt(maxRent);
+      }
+    }
+
+    // Bedrooms filter
+    if (bedrooms && !isNaN(bedrooms)) {
+      propertyFilters.bedrooms = parseInt(bedrooms);
+    }
+
+    // Bathrooms filter
+    if (bathrooms && !isNaN(bathrooms)) {
+      propertyFilters.bathrooms = parseInt(bathrooms);
+    }
+
+    // Build user filters for aggregation
+    let userMatchStage = {};
     if (customerEmail) {
-      ownerFilter['user.email'] = customerEmail;
+      userMatchStage.email = new RegExp(customerEmail, 'i'); // Case-insensitive partial match
     }
     if (customerPhone) {
-      ownerFilter['user.phone'] = customerPhone;
+      userMatchStage.phone = new RegExp(customerPhone, 'i'); // Partial match
     }
-
-    // Fetch properties with deep population
-    let properties = await Property.find(filters)
-      .populate({
-        path: 'owner',
-        populate: {
-          path: 'user',
-          model: 'User',
-          select: 'firstName lastName name email phone verified role'
+    if (customerName) {
+      userMatchStage.$or = [
+        { firstName: new RegExp(customerName, 'i') },
+        { lastName: new RegExp(customerName, 'i') },
+        { name: new RegExp(customerName, 'i') },
+        { 
+          $expr: { 
+            $regexMatch: { 
+              input: { $concat: ['$firstName', ' ', '$lastName'] }, 
+              regex: customerName, 
+              options: 'i' 
+            } 
+          } 
         }
-      });
-
-    // If filtering by email/phone, filter results in memory
-    if (customerEmail || customerPhone) {
-      properties = properties.filter(
-        (p) =>
-          p.owner &&
-          p.owner.user &&
-          ((customerEmail && p.owner.user.email === customerEmail) ||
-            (customerPhone && p.owner.user.phone === customerPhone))
-      );
+      ];
     }
+
+    // Use aggregation for better performance when filtering by user data
+    const hasUserFilters = customerEmail || customerPhone || customerName;
+    
+    let properties, totalCount;
+
+    if (hasUserFilters) {
+      // Use aggregation pipeline for complex user filtering
+      const pipeline = [
+        { $match: propertyFilters },
+        {
+          $lookup: {
+            from: 'owners', // Adjust collection name as needed
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerData'
+          }
+        },
+        { $unwind: { path: '$ownerData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'ownerData.user',
+            foreignField: '_id',
+            as: 'userData'
+          }
+        },
+        { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
+        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: { 'userData': userMatchStage } }] : []),
+        { $sort: { [sortField]: sortDirection } },
+        {
+          $facet: {
+            data: [
+              { $skip: skip },
+              { $limit: limitNum }
+            ],
+            totalCount: [{ $count: 'count' }]
+          }
+        }
+      ];
+
+      const result = await Property.aggregate(pipeline);
+      properties = result[0].data;
+      totalCount = result[0].totalCount[0]?.count || 0;
+
+      // Populate the aggregated results properly
+      properties = properties.map(prop => ({
+        ...prop,
+        owner: prop.ownerData ? {
+          ...prop.ownerData,
+          user: prop.userData || null
+        } : null
+      }));
+    } else {
+      // Use regular find with population for better performance when no user filters
+      const countPromise = Property.countDocuments(propertyFilters);
+      const propertiesPromise = Property.find(propertyFilters)
+        .populate({
+          path: 'owner',
+          populate: {
+            path: 'user',
+            model: 'User',
+            select: 'firstName lastName name email phone verified role'
+          }
+        })
+        .sort({ [sortField]: sortDirection })
+        .skip(skip)
+        .limit(limitNum);
+
+      [totalCount, properties] = await Promise.all([countPromise, propertiesPromise]);
+    }
+
+    // Calculate status breakdown efficiently
+    const statusBreakdownPipeline = [
+      { $match: hasUserFilters ? {} : propertyFilters }, // Apply same filters for consistency
+      ...(hasUserFilters ? [
+        {
+          $lookup: {
+            from: 'owners',
+            localField: 'owner',
+            foreignField: '_id',
+            as: 'ownerData'
+          }
+        },
+        { $unwind: { path: '$ownerData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'ownerData.user',
+            foreignField: '_id',
+            as: 'userData'
+          }
+        },
+        { $unwind: { path: '$userData', preserveNullAndEmptyArrays: true } },
+        ...(Object.keys(userMatchStage).length > 0 ? [{ $match: { 'userData': userMatchStage } }] : [])
+      ] : []),
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ];
+
+    const statusBreakdownResult = await Property.aggregate(statusBreakdownPipeline);
+    const statusBreakdown = statusBreakdownResult.reduce((acc, item) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, {
+      [PROPERTY_STATUS.PENDING]: 0,
+      [PROPERTY_STATUS.APPROVED]: 0,
+      [PROPERTY_STATUS.PUBLISHED]: 0,
+      [PROPERTY_STATUS.REJECTED]: 0
+    });
+
+    // Format response data
+    const formattedProperties = properties.map((property) => ({
+      id: property._id,
+      title: property.title,
+      description: property.description,
+      location: property.location,
+      rent: property.rent,
+      deposit: property.deposit,
+      propertyType: property.propertyType,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      area: property.area,
+      amenities: property.amenities,
+      images: property.images,
+      status: property.status,
+      createdAt: property.createdAt,
+      updatedAt: property.updatedAt,
+      owner: property.owner && property.owner.user
+        ? {
+            id: property.owner.user._id,
+            firstName: property.owner.user.firstName,
+            lastName: property.owner.user.lastName,
+            name: property.owner.user.name,
+            email: property.owner.user.email,
+            phone: property.owner.user.phone,
+            verified: property.owner.user.verified,
+            role: property.owner.user.role
+          }
+        : null
+    }));
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
 
     res.status(200).json({
       statusCode: 200,
@@ -308,51 +510,31 @@ const getAllPropertiesForAdmin = async (req, res) => {
       error: null,
       data: {
         message: 'Properties retrieved successfully',
-        properties: properties.map((property) => ({
-          id: property._id,
-          title: property.title,
-          description: property.description,
-          location: property.location,
-          rent: property.rent,
-          deposit: property.deposit,
-          propertyType: property.propertyType,
-          bedrooms: property.bedrooms,
-          bathrooms: property.bathrooms,
-          area: property.area,
-          amenities: property.amenities,
-          images: property.images,
-          status: property.status,
-          createdAt: property.createdAt,
-          updatedAt: property.updatedAt,
-          owner: property.owner && property.owner.user
-            ? {
-                id: property.owner.user._id,
-                firstName: property.owner.user.firstName,
-                lastName: property.owner.user.lastName,
-                name: property.owner.user.name,
-                email: property.owner.user.email,
-                phone: property.owner.user.phone,
-                verified: property.owner.user.verified,
-                role: property.owner.user.role
-              }
-            : null
-        })),
-        totalProperties: properties.length,
-        statusBreakdown: {
-          pending: properties.filter(
-            (p) => p.status === PROPERTY_STATUS.PENDING
-          ).length,
-          approved: properties.filter(
-            (p) => p.status === PROPERTY_STATUS.APPROVED
-          ).length,
-          published: properties.filter(
-            (p) => p.status === PROPERTY_STATUS.PUBLISHED
-          ).length,
-          rejected: properties.filter(
-            (p) => p.status === PROPERTY_STATUS.REJECTED
-          ).length
-        }
-        
+        properties: formattedProperties,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalProperties: totalCount,
+          propertiesPerPage: limitNum,
+          hasNextPage,
+          hasPrevPage
+        },
+        filters: {
+          propertyId: propertyId || null,
+          customerEmail: customerEmail || null,
+          customerName: customerName || null,
+          customerPhone: customerPhone || null,
+          status: status || null,
+          propertyType: propertyType || null,
+          rentRange: { min: minRent || null, max: maxRent || null },
+          bedrooms: bedrooms || null,
+          bathrooms: bathrooms || null
+        },
+        sorting: {
+          sortBy: sortField,
+          sortOrder: sortOrder
+        },
+        statusBreakdown
       }
     });
   } catch (error) {
