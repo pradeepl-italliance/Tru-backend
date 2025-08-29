@@ -197,7 +197,8 @@ const validateOTP = async (req, res) => {
           email: user.email,
           isVerified: user.verified,
           name: user.name,
-          role: user.role
+          role: user.role,
+          phone: user.phone
         }
       }
     });
