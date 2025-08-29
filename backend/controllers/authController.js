@@ -245,7 +245,8 @@ const loginWithPassword = async (req, res) => {
           user: {
             id: user._id,
             email: user.email,
-            isVerified: user.verified
+            isVerified: user.verified,
+            phone: user.phone
           }
         }
       });
@@ -277,6 +278,7 @@ const loginWithPassword = async (req, res) => {
           email: user.email,
           name: user.name,
           role: user.role,
+          phone: user.phone,
           isVerified: user.verified
         }
       }
@@ -324,6 +326,7 @@ const loginWithOTP = async (req, res) => {
           user: {
             id: user._id,
             email: user.email,
+            phone: user.phone,
             isVerified: user.verified
           }
         }
@@ -356,6 +359,7 @@ const loginWithOTP = async (req, res) => {
           email: user.email,
           name: user.name,
           role: user.role,
+          phone: user.phone,
           isVerified: user.verified
         }
       }
@@ -403,6 +407,7 @@ const sendOTP = async (req, res) => {
         user: {
           id: user._id,
           email: user.email,
+          phone: user.phone,
           isVerified: user.verified
         }
       }
